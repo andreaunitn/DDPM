@@ -21,7 +21,7 @@ class EMA(nn.Module):
         self.ema_model.eval()
 
         for param in self.ema_model.parameters():
-            param.requires_grad() = False
+            param.requires_grad = False
 
     def update_model_average(self, current_model):
         self.step =+ 1
