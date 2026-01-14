@@ -61,7 +61,7 @@ def generate_batch(model, batch_size, T, device):
         # Reverse equation
         x = (1 / torch.sqrt(alpha)) * (x - ((1 - alpha) / (torch.sqrt(1 - alpha_hat))) * predicted_noise) + torch.sqrt(beta) * noise
 
-        return x
+    return x
     
 def calculate_fid():
     print(f"Initializing FID metric on {device}")

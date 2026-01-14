@@ -20,7 +20,7 @@ def sample_image(model_path):
                 out_dim=1
                 ).to(device)
     
-    model.load_state_dict(torch.load(model_path))
+    model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
 
     # Start from pure noise
@@ -52,4 +52,4 @@ def sample_image(model_path):
     plt.imsave("digit.png", img, cmap="gray")
 
 if __name__ == "__main__":
-    sample_image("diffusion_model.pth")
+    sample_image("diffusion_model_ema.pth")

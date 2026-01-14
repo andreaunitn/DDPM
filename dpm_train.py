@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 
 from model import DDPM
 from utils import LiveLossPlot
+from ema import EMA
 
 device = "mps" if torch.backends.mps.is_available() else "cpu"
 
@@ -22,6 +23,7 @@ alphas_cumprod = torch.cumprod(alphas.cpu(), axis=0).to(device)
 
 def get_data(train=True):
     transform = transforms.Compose([
+        transforms.Resize((32, 32)),
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,)) # Normalize to range [-1, 1]
     ])
@@ -57,6 +59,9 @@ if __name__ == "__main__":
                 out_dim=1
                 ).to(device)
     
+    # Init EMA
+    ema = EMA(model)
+    
     optimizer = optim.Adam(model.parameters(), lr=lr)
     diffusion_loss = nn.MSELoss()
 
@@ -79,6 +84,8 @@ if __name__ == "__main__":
             loss.backward()
             optimizer.step()
 
+            ema.update_model_average(model)
+
             if step % 50 == 0:
                 print(f"Epoch {epoch} | Step {step} | Loss: {loss.item():.4f}")
                 plotter.update(loss.item())
@@ -88,4 +95,5 @@ if __name__ == "__main__":
     plt.show()
 
     torch.save(model.state_dict(), f"diffusion_model.pth")
-    print(f"--> Finished. Model saved.")
+    ema.save_checkpoint("diffusion_model_ema.pth")
+    print(f"--> Finished. Models saved.")
