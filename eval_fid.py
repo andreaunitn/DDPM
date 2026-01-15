@@ -7,7 +7,7 @@ from tqdm import tqdm
 from model import DDPM
 from dpm_train import get_data, betas, alphas, alphas_cumprod, device
 
-checkpoint_path = "diffusion_model.pth"
+checkpoint_path = "diffusion_model_ema.pth"
 num_batches =  5
 batch_size = 32
 
@@ -76,7 +76,8 @@ def calculate_fid():
                 out_dim=1
                 ).to(device)
     
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(checkpoint["model_state_dict"])
     print("Model loaded successfully.")
 
     # 2. Update with real images

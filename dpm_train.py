@@ -56,7 +56,8 @@ if __name__ == "__main__":
                 image_size=32,
                 bottleneck_dim=4,
                 in_channels=1,
-                out_dim=1
+                out_dim=1,
+                num_classes=10
                 ).to(device)
     
     # Init EMA
@@ -69,16 +70,17 @@ if __name__ == "__main__":
     step_count = 0
 
     for epoch in range(epochs):
-        for step, (images, _) in enumerate(dataloader):
+        for step, (images, labels) in enumerate(dataloader):
             optimizer.zero_grad()
 
             images = images.to(device)
+            labels = labels.to(device)
 
             # Sample random timestamps for every image in the batch
             t = torch.randint(0, T, (images.shape[0],), device=device).long()
             x_t, noise = forward_diffusion(images, t)
 
-            noise_pred = model(x_t, t)
+            noise_pred = model(x_t, t, labels)
 
             loss = diffusion_loss(noise_pred, noise)
             loss.backward()

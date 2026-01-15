@@ -128,12 +128,18 @@ class DDPM(nn.Module):
                  bottleneck_dim=4,
                  max_channels=512,
                  out_dim=3,
-                 time_emb_dim=256
+                 time_emb_dim=256,
+                 num_classes=None
                  ):
         
         super(DDPM, self).__init__()
+        
+        # Class Conditioning Setup
+        self.num_classes = num_classes
+        if self.num_classes is not None:
+            self.label_emb = nn.Embedding(num_classes, time_emb_dim)
 
-        # 1 Calculating required depth
+        # Calculating required depth
         # e. g. 64 // 4 -> 16 -> log2(16) = 4 steps
         if image_size % bottleneck_dim != 0:
             raise ValueError(f"Image size {image_size} must be divisible by bottleneck {bottleneck_dim}")
@@ -141,7 +147,7 @@ class DDPM(nn.Module):
         ratio = image_size // bottleneck_dim
         num_resolutions = int(math.log2(ratio))
 
-        # 2 Auto-generate channel multipliers
+        # Auto-generate channel multipliers
         channel_mults = []
         current_mult = 1
 
@@ -207,8 +213,12 @@ class DDPM(nn.Module):
 
         self.output = nn.Conv2d(channels, out_dim, 1)
 
-    def forward(self, x, t):
+    def forward(self, x, t, y=None):
         t = self.time_mlp(t)
+
+        # Inject Class Information
+        if y is not None and self.num_classes is not None:
+            t += self.label_emb(y)
 
         x = self.conv0(x)
         skips = [x]

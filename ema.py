@@ -24,7 +24,7 @@ class EMA(nn.Module):
             param.requires_grad = False
 
     def update_model_average(self, current_model):
-        self.step =+ 1
+        self.step += 1
 
         # If warmup phase just copy the weights exactly
         if self.step < self.step_start_ema:
