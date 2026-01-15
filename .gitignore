@@ -1,4 +1,5 @@
 .DS_Store
 data/
 diffusion_model.pth
+diffusion_model_ema.pth
 sohl-dickstein15.pdf
