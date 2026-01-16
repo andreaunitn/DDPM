@@ -82,26 +82,29 @@ def generate_digit(digit):
             step_img = process_image(img)
             intermediate_steps.append((step_img, f"Step {i}"))
 
-    final_img = process_image(img)
-    intermediate_steps.append((final_img, "Final Result"))
+            yield None, intermediate_steps
 
-    return final_img, intermediate_steps
+        if i == 0:
+            final_image = process_image(img)
+            intermediate_steps.append((final_image, "Final Result"))
+
+            yield final_image, intermediate_steps
 
 # --- INTERFACE ---
 with gr.Blocks(title="Diffusion Process") as demo:
     gr.Markdown("# 🎨 Conditional Diffusion Demo")
-    gr.Markdown("Pick a number, and watch the AI dream it up from pure noise.")
+    gr.Markdown("Pick a number and watch the Diffusion Model builts it from pure noise.")
     
     with gr.Row():
         with gr.Column(scale=1):
             digit_input = gr.Slider(0, 9, step=1, label="Which number?", value=5)
             run_btn = gr.Button("Generate", variant="primary")
-            output_image = gr.Image(label="Final Output", type="pil")
 
         with gr.Column(scale=2):
+            final_output = gr.Image(label="Final Result", type="pil")
             gallery = gr.Gallery(label="Denoising Process", columns=4, height="auto")
 
-    run_btn.click(fn=generate_digit, inputs=digit_input, outputs=[output_image, gallery])
+    run_btn.click(fn=generate_digit, inputs=digit_input, outputs=[final_output, gallery])
 
 if __name__ == "__main__":
     demo.launch()
