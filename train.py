@@ -7,7 +7,8 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 
 from diffusion_core.model import DiffusionModel
-from diffusion_core.utils import LiveLossPlot, get_cosine_schedule
+from diffusion_core.schedule import get_cosine_schedule
+from diffusion_core.utils import LiveLossPlot
 from diffusion_core.ema import EMA
 
 device = "mps" if torch.backends.mps.is_available() else "cpu"
@@ -15,7 +16,7 @@ device = "mps" if torch.backends.mps.is_available() else "cpu"
 # Config
 batch_size = 128
 epochs = 20
-lr = 1e-4
+lr = 2e-4
 T = 1000
 betas = get_cosine_schedule(T).to(device)
 alphas = 1.0 - betas
@@ -63,8 +64,11 @@ if __name__ == "__main__":
     # Init EMA
     ema = EMA(model)
     
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     diffusion_loss = nn.MSELoss()
+
+    # Scaler for mixed precision
+    scaler = torch.amp.GradScaler("mps")
 
     plotter = LiveLossPlot()
     step_count = 0
@@ -80,11 +84,16 @@ if __name__ == "__main__":
             t = torch.randint(0, T, (images.shape[0],), device=device).long()
             x_t, noise = forward_diffusion(images, t)
 
-            noise_pred = model(x_t, t, labels)
+            # Autocast for mixed precision
+            with torch.amp.autocast(device_type="mps", dtype=torch.bfloat16):
+                noise_pred = model(x_t, t, labels)
+                loss = diffusion_loss(noise_pred, noise)
 
-            loss = diffusion_loss(noise_pred, noise)
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0) # Gradient clipping
+            scaler.step(optimizer)
+            scaler.update()
 
             ema.update_model_average(model)
 

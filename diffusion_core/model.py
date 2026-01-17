@@ -4,6 +4,8 @@ import torch.nn.functional as F
 
 import math
 
+from .blocks import AttentionBlock, AdaGNResidualBlock
+
 # Positional Emncoding for the timestep
 class SinusoidalPositionEmbeddings(nn.Module):
     def __init__(self, dim):
@@ -22,83 +24,6 @@ class SinusoidalPositionEmbeddings(nn.Module):
         embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=1)
 
         return embeddings
-    
-class AttentionBlock(nn.Module):
-    def __init__(self,
-                 channels,
-                 num_groups=8
-                 ):
-        
-        super(AttentionBlock, self).__init__()
-
-        self.norm = nn.GroupNorm(num_groups, channels)
-        self.qkv = nn.Conv2d(channels, channels * 3, 1) # Compute Query, Key, Value all at once
-        self.proj = nn.Conv2d(channels, channels, 1) # Projection layer for the output
-
-    def forward(self, x):
-        B, C, H, W = x.shape
-
-        # 1 Normalize and compute Q, K, V
-        h = self.norm(x)
-        qkv = self.qkv(h)
-        q, k, v = qkv.chunk(3, dim=1)
-
-        # 2 Reshape (Flash attention expects: B, Heads, SeqLen, Dim)
-        q = q.reshape(B, 1, C, -1).permute(0, 1, 3, 2)
-        k = k.reshape(B, 1, C, -1).permute(0, 1, 3, 2)
-        v = v.reshape(B, 1, C, -1).permute(0, 1, 3, 2)
-
-        # 3 Compute Flash attention (= self attention optimized)
-        h = F.scaled_dot_product_attention(q, k, v)
-
-        # 4 Reshape back
-        h = h.squeeze(1).permute(0, 2, 1).reshape(B, C, H, W)
-
-        # 5 Projection + Residual
-        return x + h
-    
-class ResidualBlock(nn.Module):
-    def __init__(self, 
-                 in_channels, 
-                 out_channels, 
-                 time_emb_dim, 
-                 num_groups=8
-                 ):
-        
-        super(ResidualBlock, self).__init__()
-
-        self.conv1 = nn.Sequential(
-            nn.GroupNorm(num_groups, in_channels),
-            nn.SiLU(),
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
-        )
-
-        # Linear projection for time embeddings
-        self.time_proj = nn.Sequential(
-            nn.SiLU(),
-            nn.Linear(time_emb_dim, out_channels)
-        )
-
-        self.conv2 = nn.Sequential(
-            nn.GroupNorm(num_groups, out_channels),
-            nn.SiLU(),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
-        )
-
-        # Shortcut connection
-        if in_channels != out_channels:
-            self.shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        else:
-            self.shortcut = nn.Identity()
-
-    def forward(self, x, t):
-        h = self.conv1(x)
-
-        # Add time embedding (broadcast to spatial dims)
-        h = h + self.time_proj(t)[:, :, None, None]
-
-        h = self.conv2(h)
-        return h + self.shortcut(x)
     
 class Downsample(nn.Module):
     def __init__(self, dim):
@@ -134,7 +59,7 @@ class DiffusionModel(nn.Module):
         
         super(DiffusionModel, self).__init__()
         
-        # Class Conditioning Setup
+        # Class conditioning setup
         self.num_classes = num_classes
         if self.num_classes is not None:
             self.label_emb = nn.Embedding(num_classes, time_emb_dim)
@@ -183,8 +108,8 @@ class DiffusionModel(nn.Module):
             is_last = idx == (len(channel_mults) - 1)
 
             self.downs.append(nn.ModuleList([
-                ResidualBlock(channels, out_channels, time_emb_dim),
-                ResidualBlock(out_channels, out_channels, time_emb_dim),
+                AdaGNResidualBlock(channels, out_channels, time_emb_dim),
+                AdaGNResidualBlock(out_channels, out_channels, time_emb_dim),
                 Downsample(out_channels) if not is_last else nn.Identity()
             ]))
 
@@ -192,9 +117,9 @@ class DiffusionModel(nn.Module):
             curr_channels.append(channels)
 
         # --- BOTTLENECK ---
-        self.mid1 = ResidualBlock(channels, channels, time_emb_dim)
+        self.mid1 = AdaGNResidualBlock(channels, channels, time_emb_dim)
         self.attn = AttentionBlock(channels)
-        self.mid2 = ResidualBlock(channels, channels, time_emb_dim)
+        self.mid2 = AdaGNResidualBlock(channels, channels, time_emb_dim)
 
         # --- Dynamic UP PATH ---
         for idx, mult in enumerate(reversed(channel_mults)):
@@ -205,8 +130,8 @@ class DiffusionModel(nn.Module):
 
             self.ups.append(nn.ModuleList([
                 Upsample(channels) if idx > 0 else nn.Identity(),
-                ResidualBlock(channels + skip_channels, out_channels, time_emb_dim),
-                ResidualBlock(out_channels, out_channels, time_emb_dim)
+                AdaGNResidualBlock(channels + skip_channels, out_channels, time_emb_dim),
+                AdaGNResidualBlock(out_channels, out_channels, time_emb_dim)
             ]))
 
             channels = out_channels
