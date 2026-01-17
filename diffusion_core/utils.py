@@ -1,3 +1,6 @@
+import torch
+import math
+
 import matplotlib.pyplot as plt
 
 class LiveLossPlot:
@@ -19,5 +22,3 @@ class LiveLossPlot:
         self.ax.autoscale_view()
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
-
- 

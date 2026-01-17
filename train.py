@@ -6,9 +6,9 @@ from torch.utils.data import DataLoader
 
 import matplotlib.pyplot as plt
 
-from model import DDPM
-from utils import LiveLossPlot
-from ema import EMA
+from diffusion_core.model import DiffusionModel
+from diffusion_core.utils import LiveLossPlot, get_cosine_schedule
+from diffusion_core.ema import EMA
 
 device = "mps" if torch.backends.mps.is_available() else "cpu"
 
@@ -17,7 +17,7 @@ batch_size = 128
 epochs = 20
 lr = 1e-4
 T = 1000
-betas = torch.linspace(1e-4, 0.02, T).to(device)
+betas = get_cosine_schedule(T).to(device)
 alphas = 1.0 - betas
 alphas_cumprod = torch.cumprod(alphas.cpu(), axis=0).to(device)
 
@@ -52,7 +52,7 @@ def forward_diffusion(x_0, t):
 if __name__ == "__main__":
 
     dataloader = get_data()
-    model = DDPM(
+    model = DiffusionModel(
                 image_size=32,
                 bottleneck_dim=4,
                 in_channels=1,
@@ -96,6 +96,6 @@ if __name__ == "__main__":
     plt.ioff()
     plt.show()
 
-    torch.save(model.state_dict(), f"diffusion_model.pth")
-    ema.save_checkpoint("diffusion_model_ema.pth")
+    torch.save(model.state_dict(), f"checkpoints/diffusion_model.pth")
+    ema.save_checkpoint("checkpoints/diffusion_model_ema.pth")
     print(f"--> Finished. Models saved.")

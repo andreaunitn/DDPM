@@ -1,15 +1,18 @@
 import torch
 from PIL import Image
 
-import imageio
 import gradio as gr
+import os
 
-from model import DDPM
+from diffusion_core.model import DiffusionModel
+from diffusion_core.schedule import get_cosine_schedule
+from diffusion_core.sampling import ddpm_sample, ddim_sample
 
-device = "cpu"
-model_path = "diffusion_model_ema.pth"
+device = "mps" if torch.backends.mps.is_available() else "cpu"
+model_path = "checkpoints/diffusion_model_ema.pth"
 
-model = DDPM(
+# Load model
+model = DiffusionModel(
             image_size=32,
             bottleneck_dim=4,
             in_channels=1,
@@ -17,18 +20,18 @@ model = DDPM(
             num_classes=10
             ).to(device)
 
-if torch.backends.mps.is_available():
-    checkpoint = torch.load(model_path, map_location="mps")
+if os.path.exists(model_path):
+    checkpoint = torch.load(model_path, map_location=device)
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval()
 else:
-    checkpoint = torch.load(model_path, map_location="cpu")
+    raise RuntimeError("Model not found!")
 
-model.load_state_dict(checkpoint["model_state_dict"])
-model.eval()
-
+# Setup schedule
 T = 1000
-betas = torch.linspace(1e-4, 0.02, T).to(device)
+betas = get_cosine_schedule(T).to(device)
 alphas = 1.0 - betas
-alphas_cumprod = torch.cumprod(alphas, axis=0).to(device)
+alphas_cumprod = torch.cumprod(alphas.cpu(), axis=0).to(device)
 
 def process_image(img_tensor):
     """
@@ -49,46 +52,47 @@ def process_image(img_tensor):
     return pil_img
 
 @torch.no_grad()
-def generate_digit(digit):
+def generate_digit(digit, use_ddim, seed):
     """
     Input: int (0-9)
-    Output: PIL Image (256x256)
+    Output: PIL Image (256 x 256)
     """
     
-    # Handle the input from the UI
-    y = torch.tensor([digit]).long().to(device)
-    img = torch.randn(1, 1, 32, 32).to(device)
+    if seed is not None:
+        seed = int(seed)
 
+    y = torch.tensor([digit]).long().to(device)
     intermediate_steps = []
 
-    # Fast sampling for web (optional: you could skip steps to make it faster)
-    for i in reversed(range(T)):
-        t = torch.tensor([i], device=device).long()
-        predicted_noise = model(img, t, y)
+    if use_ddim:
+        sampler = ddim_sample(
+            model, n_samples=1, image_size=32, in_channels=1,
+            alphas_cumprod=alphas_cumprod, y=y, device=device,
+            timesteps=T, ddim_steps=50, seed=seed
+        )
+        
+        update_frequency = 5
 
-        beta = betas[i]
-        alpha = alphas[i]
-        alpha_hat = alphas_cumprod[i]
+    else:
+        sampler = ddpm_sample(
+            model, n_samples=1, image_size=32, in_channels=1,
+            betas=betas, alphas=alphas, alphas_cumprod=alphas_cumprod,
+            y=y, device=device, timesteps=T, seed=seed
+        )
 
-        if i > 0:
-            noise = torch.randn_like(img)
-        else:
-            noise = torch.zeros_like(img)
+        update_frequency = 100
 
-        img = (1 / torch.sqrt(alpha)) * (img - ((1 - alpha) / (torch.sqrt(1 - alpha_hat))) * predicted_noise) + torch.sqrt(beta) * noise
-
-        # Capture frames for visual feedback
-        if i % 100 == 0 and i != 0:
-            step_img = process_image(img)
-            intermediate_steps.append((step_img, f"Step {i}"))
-
+    # Generation loop
+    for i, (x, pred_x0) in enumerate(sampler):
+        if i % update_frequency == 0:
+            current_img = process_image(x)
+            intermediate_steps.append((current_img, f"Step {i}"))
+            
             yield None, intermediate_steps
 
-        if i == 0:
-            final_image = process_image(img)
-            intermediate_steps.append((final_image, "Final Result"))
-
-            yield final_image, intermediate_steps
+    final_clean = process_image(pred_x0)
+    intermediate_steps.append((final_clean, "Final Result"))
+    yield final_clean, intermediate_steps
 
 # --- INTERFACE ---
 with gr.Blocks(title="Diffusion Process") as demo:
@@ -98,13 +102,15 @@ with gr.Blocks(title="Diffusion Process") as demo:
     with gr.Row():
         with gr.Column(scale=1):
             digit_input = gr.Slider(0, 9, step=1, label="Which number?", value=5)
+            seed_input = gr.Number(label="Seed (leave blank for random)", value=None, precision=0)
+            use_ddim_chk = gr.Checkbox(label="Use fast sampling (DDIM)", value=True)
             run_btn = gr.Button("Generate", variant="primary")
 
         with gr.Column(scale=2):
             final_output = gr.Image(label="Final Result", type="pil")
             gallery = gr.Gallery(label="Denoising Process", columns=4, height="auto")
 
-    run_btn.click(fn=generate_digit, inputs=digit_input, outputs=[final_output, gallery])
+    run_btn.click(fn=generate_digit, inputs=[digit_input, use_ddim_chk, seed_input], outputs=[final_output, gallery])
 
 if __name__ == "__main__":
     demo.launch()

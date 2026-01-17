@@ -4,10 +4,10 @@ from torchmetrics.image.fid import FrechetInceptionDistance
 from torchvision import transforms
 from tqdm import tqdm
 
-from model import DDPM
-from dpm_train import get_data, betas, alphas, alphas_cumprod, device
+from diffusion_core.model import DiffusionModel
+from train import get_data, betas, alphas, alphas_cumprod, device
 
-checkpoint_path = "diffusion_model_ema.pth"
+checkpoint_path = "checkpoints/diffusion_model_ema.pth"
 num_batches =  5
 batch_size = 32
 
@@ -69,7 +69,7 @@ def calculate_fid():
     fid = FrechetInceptionDistance(feature=64).to("cpu")
 
     # 1. Load model
-    model = DDPM(
+    model = DiffusionModel(
                 image_size=32,
                 bottleneck_dim=4,
                 in_channels=1,

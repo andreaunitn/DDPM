@@ -120,7 +120,7 @@ class Upsample(nn.Module):
         x = nn.functional.interpolate(x, scale_factor=2, mode="nearest")
         return self.conv(x)
     
-class DDPM(nn.Module):
+class DiffusionModel(nn.Module):
     def __init__(self,
                  image_size=64,
                  in_channels=3,
@@ -132,7 +132,7 @@ class DDPM(nn.Module):
                  num_classes=None
                  ):
         
-        super(DDPM, self).__init__()
+        super(DiffusionModel, self).__init__()
         
         # Class Conditioning Setup
         self.num_classes = num_classes
