@@ -9,7 +9,7 @@ from diffusion_core.schedule import get_cosine_schedule
 from diffusion_core.sampling import ddpm_sample, ddim_sample
 
 device = "mps" if torch.backends.mps.is_available() else "cpu"
-model_path = "checkpoints/diffusion_model_ema.pth"
+model_path = "checkpoints/diffusion_model_ema_final.pth"
 
 # Load model
 model = DiffusionModel(

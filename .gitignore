@@ -1,5 +1,4 @@
 .DS_Store
 data/
-checkpoints/diffusion_model.pth
-checkpoints/diffusion_model_ema.pth
+checkpoints/
 sohl-dickstein15.pdf

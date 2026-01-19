@@ -5,17 +5,19 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
 import matplotlib.pyplot as plt
+import argparse
+import os
 
 from diffusion_core.model import DiffusionModel
 from diffusion_core.schedule import get_cosine_schedule
-from diffusion_core.utils import LiveLossPlot
+from diffusion_core.utils import LiveLossPlot, save_training_checkpoint
 from diffusion_core.ema import EMA
 
 device = "mps" if torch.backends.mps.is_available() else "cpu"
 
 # Config
 batch_size = 128
-epochs = 20
+epochs = 50
 lr = 2e-4
 T = 1000
 betas = get_cosine_schedule(T).to(device)
@@ -50,7 +52,7 @@ def forward_diffusion(x_0, t):
 
     return x_t, noise
 
-if __name__ == "__main__":
+def main(args):
 
     dataloader = get_data()
     model = DiffusionModel(
@@ -68,12 +70,35 @@ if __name__ == "__main__":
     diffusion_loss = nn.MSELoss()
 
     # Scaler for mixed precision
-    scaler = torch.amp.GradScaler("mps")
+    scaler = torch.amp.GradScaler(device)
 
     plotter = LiveLossPlot()
+    start_epoch = 0
     step_count = 0
 
-    for epoch in range(epochs):
+    # Resume training
+    if args.resume:
+        if os.path.isfile(args.resume):
+            print(f"Loading checkpoint from {args.resume}")
+            checkpoint = torch.load(args.resume, map_location=device)
+            model.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+            if "scaler_state_dict" in checkpoint:
+                scaler.load_state_dict(checkpoint["scaler_state_dict"])
+
+            ema.ema_model.load_state_dict(checkpoint["ema_model_state_dict"])
+            ema.step = checkpoint["ema_step"]
+
+            start_epoch = checkpoint["epoch"] + 1
+            
+            print(f"Resumed training from epoch {start_epoch}")
+        else:
+            raise RuntimeError("Model not found!")
+        
+    # Training loop
+    for epoch in range(start_epoch, epochs):
+        model.train()
         for step, (images, labels) in enumerate(dataloader):
             optimizer.zero_grad()
 
@@ -96,15 +121,28 @@ if __name__ == "__main__":
             scaler.update()
 
             ema.update_model_average(model)
+            print(f"Epoch {epoch} | Step {step} | Loss: {loss.item():.4f}")
 
             if step % 50 == 0:
-                print(f"Epoch {epoch} | Step {step} | Loss: {loss.item():.4f}")
                 plotter.update(loss.item())
                 step_count += 1
+
+        # Save checkpoint every 5 epochs
+        if (epoch + 1) % 5 == 0:
+            save_training_checkpoint(f"checkpoints/diffusion_model_{epoch}.pth", epoch, model, optimizer, scaler, ema)
+            print(f"Saved checkpoint for epoch {epoch}")
 
     plt.ioff()
     plt.show()
 
-    torch.save(model.state_dict(), f"checkpoints/diffusion_model.pth")
-    ema.save_checkpoint("checkpoints/diffusion_model_ema.pth")
+    save_training_checkpoint(f"checkpoints/diffusion_model_final.pth", epochs, model, optimizer, scaler, ema)
+    ema.save_checkpoint("checkpoints/diffusion_model_ema_final.pth")
     print(f"--> Finished. Models saved.")
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint file to resume from")
+    args = parser.parse_args()
+
+    main(args)
