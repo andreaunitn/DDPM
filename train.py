@@ -15,16 +15,7 @@ from diffusion_core.ema import EMA
 
 device = "mps" if torch.backends.mps.is_available() else "cpu"
 
-# Config
-batch_size = 128
-epochs = 50
-lr = 2e-4
-T = 1000
-betas = get_cosine_schedule(T).to(device)
-alphas = 1.0 - betas
-alphas_cumprod = torch.cumprod(alphas.cpu(), axis=0).to(device)
-
-def get_data(train=True):
+def get_data(batch_size, train=True):
     transform = transforms.Compose([
         transforms.Resize((32, 32)),
         transforms.ToTensor(),
@@ -40,7 +31,7 @@ def get_data(train=True):
                       persistent_workers=True
                       )
 
-def forward_diffusion(x_0, t):
+def forward_diffusion(x_0, t, alphas_cumprod):
     """
     Takes an image and a timestep t.
     Returns the noisy image x_t and the specific noise noise_epsilon added.
@@ -59,9 +50,21 @@ def forward_diffusion(x_0, t):
     return x_t, noise
 
 def main(args):
+
+    # Config
+    batch_size = args.batch_size
+    grad_accumulation_steps = args.grad_acc_steps
+    effective_batch_size = batch_size * grad_accumulation_steps
+    epochs = args.epochs
+    lr = args.lr
+    T = args.timesteps
+    betas = get_cosine_schedule(T).to(device)
+    alphas = 1.0 - betas
+    alphas_cumprod = torch.cumprod(alphas.cpu(), axis=0).to(device)
+
     writer = SummaryWriter(log_dir="runs/diffusion_mnist")
 
-    dataloader = get_data()
+    dataloader = get_data(batch_size)
     model = DiffusionModel(
                 image_size=32,
                 bottleneck_dim=4,
@@ -74,6 +77,13 @@ def main(args):
     ema = EMA(model)
     
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    scheduler = optim.lr_scheduler.OneCycleLR(
+        optimizer,
+        max_lr=lr,
+        steps_per_epoch=len(dataloader) // grad_accumulation_steps,
+        epochs=epochs
+    )
+
     diffusion_loss = nn.MSELoss()
 
     # Scaler for mixed precision
@@ -106,26 +116,34 @@ def main(args):
     # Training loop
     for epoch in range(start_epoch, epochs):
         model.train()
+        optimizer.zero_grad()
+
         for step, (images, labels) in enumerate(dataloader):
-            optimizer.zero_grad()
 
             images = images.to(device)
             labels = labels.to(device)
 
             # Sample random timestamps for every image in the batch
             t = torch.randint(0, T, (images.shape[0],), device=device).long()
-            x_t, noise = forward_diffusion(images, t)
+            x_t, noise = forward_diffusion(images, t, alphas_cumprod)
 
             # Autocast for mixed precision
             with torch.amp.autocast(device_type="mps", dtype=torch.bfloat16):
                 noise_pred = model(x_t, t, labels)
                 loss = diffusion_loss(noise_pred, noise)
+                loss = loss / grad_accumulation_steps # Normalizing
 
             scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0) # Gradient clipping
-            scaler.step(optimizer)
-            scaler.update()
+
+            if (step + 1) % grad_accumulation_steps == 0:
+
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0) # Gradient clipping
+                scaler.step(optimizer)
+                scaler.update()
+
+                scheduler.step()
+                optimizer.zero_grad()
 
             ema.update_model_average(model)
             global_step += 1
@@ -149,6 +167,11 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint file to resume from")
+    parser.add_argument("--batch_size", type=int, default=128)
+    parser.add_argument("--grad_acc_steps", type=int, default=4, help="Number of accumulation steps before updating the parameters")
+    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--lr", type=int, default=2e-4)
+    parser.add_argument("--timesteps", type=int, default=1000)
     args = parser.parse_args()
 
     main(args)
