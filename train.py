@@ -3,14 +3,14 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
-import matplotlib.pyplot as plt
 import argparse
 import os
 
 from diffusion_core.model import DiffusionModel
 from diffusion_core.schedule import get_cosine_schedule
-from diffusion_core.utils import LiveLossPlot, save_training_checkpoint
+from diffusion_core.utils import save_training_checkpoint
 from diffusion_core.ema import EMA
 
 device = "mps" if torch.backends.mps.is_available() else "cpu"
@@ -32,7 +32,13 @@ def get_data(train=True):
     ])
 
     dataset = datasets.MNIST(root="./data", train=train, download=True, transform=transform)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    return DataLoader(dataset, 
+                      batch_size=batch_size, 
+                      shuffle=True,
+                      num_workers=4,
+                      pin_memory=False,
+                      persistent_workers=True
+                      )
 
 def forward_diffusion(x_0, t):
     """
@@ -53,6 +59,7 @@ def forward_diffusion(x_0, t):
     return x_t, noise
 
 def main(args):
+    writer = SummaryWriter(log_dir="runs/diffusion_mnist")
 
     dataloader = get_data()
     model = DiffusionModel(
@@ -72,9 +79,8 @@ def main(args):
     # Scaler for mixed precision
     scaler = torch.amp.GradScaler(device)
 
-    plotter = LiveLossPlot()
     start_epoch = 0
-    step_count = 0
+    global_step = 0
 
     # Resume training
     if args.resume:
@@ -91,6 +97,7 @@ def main(args):
             ema.step = checkpoint["ema_step"]
 
             start_epoch = checkpoint["epoch"] + 1
+            global_step = checkpoint["global_step"]
             
             print(f"Resumed training from epoch {start_epoch}")
         else:
@@ -121,22 +128,21 @@ def main(args):
             scaler.update()
 
             ema.update_model_average(model)
+            global_step += 1
             print(f"Epoch {epoch} | Step {step} | Loss: {loss.item():.4f}")
 
             if step % 50 == 0:
-                plotter.update(loss.item())
-                step_count += 1
+                writer.add_scalar("Loss/train", loss.item(), global_step)
 
         # Save checkpoint every 5 epochs
         if (epoch + 1) % 5 == 0:
-            save_training_checkpoint(f"checkpoints/diffusion_model_{epoch}.pth", epoch, model, optimizer, scaler, ema)
+            save_training_checkpoint(f"checkpoints/diffusion_model_{epoch}.pth", epoch,  global_step, model, optimizer, scaler, ema)
             print(f"Saved checkpoint for epoch {epoch}")
 
-    plt.ioff()
-    plt.show()
-
-    save_training_checkpoint(f"checkpoints/diffusion_model_final.pth", epochs, model, optimizer, scaler, ema)
+    save_training_checkpoint(f"checkpoints/diffusion_model_final.pth", epochs, global_step, model, optimizer, scaler, ema)
     ema.save_checkpoint("checkpoints/diffusion_model_ema_final.pth")
+
+    writer.close()
     print(f"--> Finished. Models saved.")
 
 if __name__ == "__main__":

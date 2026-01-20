@@ -24,6 +24,7 @@ class LiveLossPlot:
 
 def save_training_checkpoint(path,
                              epoch,
+                             global_step,
                              model,
                              optimizer,
                              scaler,
@@ -36,6 +37,7 @@ def save_training_checkpoint(path,
 
     torch.save({
         "epoch": epoch,
+        "global_step": global_step,
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "scale_state_dict": scaler.state_dict(),
