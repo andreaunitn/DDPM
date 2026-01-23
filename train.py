@@ -54,7 +54,6 @@ def main(args):
     # Config
     batch_size = args.batch_size
     grad_accumulation_steps = args.grad_acc_steps
-    effective_batch_size = batch_size * grad_accumulation_steps
     epochs = args.epochs
     lr = args.lr
     T = args.timesteps
@@ -144,8 +143,8 @@ def main(args):
 
                 scheduler.step()
                 optimizer.zero_grad()
-
-            ema.update_model_average(model)
+                ema.update_model_average(model)
+                
             global_step += 1
             print(f"Epoch {epoch} | Step {step} | Loss: {loss.item():.4f}")
 
@@ -158,7 +157,6 @@ def main(args):
             print(f"Saved checkpoint for epoch {epoch}")
 
     save_training_checkpoint(f"checkpoints/diffusion_model_final.pth", epochs, global_step, model, optimizer, scaler, ema)
-    ema.save_checkpoint("checkpoints/diffusion_model_ema_final.pth")
 
     writer.close()
     print(f"--> Finished. Models saved.")

@@ -9,7 +9,7 @@ from diffusion_core.schedule import get_cosine_schedule
 from diffusion_core.sampling import ddpm_sample, ddim_sample
 
 device = "mps" if torch.backends.mps.is_available() else "cpu"
-model_path = "checkpoints/diffusion_model_ema_final.pth"
+model_path = "checkpoints/diffusion_model_final.pth"
 
 # Load model
 model = DiffusionModel(
@@ -22,7 +22,7 @@ model = DiffusionModel(
 
 if os.path.exists(model_path):
     checkpoint = torch.load(model_path, map_location=device)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    model.load_state_dict(checkpoint["ema_model_state_dict"])
     model.eval()
 else:
     raise RuntimeError("Model not found!")
