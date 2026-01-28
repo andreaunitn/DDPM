@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, transforms
+from torchvision.utils import make_grid
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
@@ -12,6 +13,7 @@ from diffusion_core.model import DiffusionModel
 from diffusion_core.schedule import get_cosine_schedule
 from diffusion_core.utils import save_training_checkpoint
 from diffusion_core.ema import EMA
+from diffusion_core.sampling import ddim_sample
 
 device = "mps" if torch.backends.mps.is_available() else "cpu"
 
@@ -48,6 +50,36 @@ def forward_diffusion(x_0, t, alphas_cumprod):
     x_t = sqrt_alphas_cumprod_t * x_0 + sqrt_one_minus_alphas_cumprod_t * noise
 
     return x_t, noise
+
+@torch.no_grad()
+def sample_validation_images(model, alphas_cumprod, device, writer, global_step):
+    model.eval()
+
+    num_classes = 10
+    y = torch.arange(num_classes).long().to(device)
+
+    sampler = ddim_sample(
+        model=model,
+        n_samples=num_classes,
+        image_size=32,
+        in_channels=1,
+        alphas_cumprod=alphas_cumprod,
+        y=y,
+        device=device,
+        timesteps=1000,
+        ddim_steps=50
+    )
+
+    x_gen = None
+    for x, _ in sampler:
+        x_gen = x
+
+    x_gen = (x_gen.clamp(-1, 1) + 1) / 2
+
+    grid = make_grid(x_gen, nrow=5)
+    writer.add_image("Validation/Generates_Images", grid, global_step)
+
+    model.train()
 
 def main(args):
 
@@ -144,7 +176,7 @@ def main(args):
                 scheduler.step()
                 optimizer.zero_grad()
                 ema.update_model_average(model)
-                
+
             global_step += 1
             print(f"Epoch {epoch} | Step {step} | Loss: {loss.item():.4f}")
 
@@ -155,6 +187,16 @@ def main(args):
         if (epoch + 1) % 5 == 0:
             save_training_checkpoint(f"checkpoints/diffusion_model_{epoch}.pth", epoch,  global_step, model, optimizer, scaler, ema)
             print(f"Saved checkpoint for epoch {epoch}")
+
+            print("Generating validation samples...")
+            validation_model = ema.ema_model
+            sample_validation_images(
+                validation_model,
+                alphas_cumprod,
+                device,
+                writer,
+                global_step
+            )
 
     save_training_checkpoint(f"checkpoints/diffusion_model_final.pth", epochs, global_step, model, optimizer, scaler, ema)
 

@@ -2,6 +2,7 @@ import torch
 from PIL import Image
 
 import gradio as gr
+import argparse
 import os
 
 from diffusion_core.model import DiffusionModel
@@ -9,7 +10,12 @@ from diffusion_core.schedule import get_cosine_schedule
 from diffusion_core.sampling import ddpm_sample, ddim_sample
 
 device = "mps" if torch.backends.mps.is_available() else "cpu"
-model_path = "checkpoints/diffusion_model_final.pth"
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--model_path", type=str, default="checkpoints/diffusion_model_final.pth")
+args = parser.parse_args() 
+
+model_path = args.model_path
 
 # Load model
 model = DiffusionModel(
