@@ -16,25 +16,45 @@ parser.add_argument("--model_path", type=str, default="checkpoints/diffusion_mod
 args = parser.parse_args() 
 
 model_path = args.model_path
+if not os.path.exists(model_path):
+    raise RuntimeError(f"Model not found at {model_path}")
+
+checkpoint = torch.load(model_path, map_location=device)
+if "config" in checkpoint:
+    conf = checkpoint["config"]
+    model_cfg = conf["model"]
+    sample_cfg = conf["sample"]
+else:
+    model_cfg = {"image_size": 32, "bottleneck_dim": 4, "in_channels": 1,
+                    "out_dim": 1, "num_classes": 10, "model_channels": 64,
+                    "max_channels": 512, "time_emb_dim": 256
+                }
+    sample_cfg = {"T": 1000, "ddim_steps": 50}
 
 # Load model
 model = DiffusionModel(
-            image_size=32,
-            bottleneck_dim=4,
-            in_channels=1,
-            out_dim=1,
-            num_classes=10
-            ).to(device)
+                image_size=model_cfg["image_size"],
+                bottleneck_dim=model_cfg["bottleneck_dim"],
+                in_channels=model_cfg["in_channels"],
+                out_dim=model_cfg["out_dim"],
+                num_classes=model_cfg["num_classes"],
+                model_channels=model_cfg["model_channels"],
+                max_channels=model_cfg["max_channels"],
+                time_emb_dim=model_cfg["time_emb_dim"],
+                ).to(device)
 
-if os.path.exists(model_path):
-    checkpoint = torch.load(model_path, map_location=device)
+# Load weights
+if "ema_model_state_dict" in checkpoint:
     model.load_state_dict(checkpoint["ema_model_state_dict"])
-    model.eval()
+    print("Loaded EMA weights.")
 else:
-    raise RuntimeError("Model not found!")
+    model.load_state_dict(checkpoint["model_state_dict"])
+    print("Loaded standard weights.")
+
+model.eval()
 
 # Setup schedule
-T = 1000
+T = sample_cfg["T"]
 betas = get_cosine_schedule(T).to(device)
 alphas = 1.0 - betas
 alphas_cumprod = torch.cumprod(alphas.cpu(), axis=0).to(device)
@@ -71,20 +91,31 @@ def generate_digit(digit, use_ddim, seed):
     intermediate_steps = []
 
     if use_ddim:
-        sampler = ddim_sample(
-            model, n_samples=1, image_size=32, in_channels=1,
-            alphas_cumprod=alphas_cumprod, y=y, device=device,
-            timesteps=T, ddim_steps=50, seed=seed
-        )
+        sampler = ddim_sample(model,
+                              n_samples=1,
+                              image_size=model_cfg["image_size"],
+                              in_channels=model_cfg["in_channels"],
+                              alphas_cumprod=alphas_cumprod,
+                              y=y,
+                              device=device,
+                              ddim_steps=sample_cfg["ddim_steps"],
+                              seed=seed
+                              )
         
         update_frequency = 5
 
     else:
-        sampler = ddpm_sample(
-            model, n_samples=1, image_size=32, in_channels=1,
-            betas=betas, alphas=alphas, alphas_cumprod=alphas_cumprod,
-            y=y, device=device, timesteps=T, seed=seed
-        )
+        sampler = ddpm_sample(model,
+                              n_samples=1,
+                              image_size=model_cfg["image_size"],
+                              in_channels=model_cfg["in_channels"],
+                              betas=betas,
+                              alphas=alphas,
+                              alphas_cumprod=alphas_cumprod,
+                              y=y,
+                              device=device,
+                              seed=seed
+                              )
 
         update_frequency = 100
 

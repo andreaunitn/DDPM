@@ -38,19 +38,6 @@ def numerical_sort(value):
 
 def evaluate(args):
 
-    model = DiffusionModel(
-                image_size=32,
-                bottleneck_dim=4,
-                in_channels=1,
-                out_dim=1,
-                num_classes=10
-                ).to(device)
-    
-    T = 1000
-    betas = get_cosine_schedule(T).to(device)
-    alphas = 1.0 - betas
-    alphas_cumprod = torch.cumprod(alphas.cpu(), axis=0).to(device)
-
     checkpoints = glob.glob(os.path.join(args.checkpoint_dir, "*.pth"))
     checkpoints.sort(key=numerical_sort)
 
@@ -87,6 +74,38 @@ def evaluate(args):
             print(f" -> Processed {total_fed} real images")
 
     print(f"Done. Stats ready for {total_fed} images.")
+
+    # Config loading
+    first_ckpt_path = checkpoints[0]
+    print(f"Loading architecture config from {os.path.basename(first_ckpt_path)}")
+    first_ckpt = torch.load(first_ckpt_path, map_location=device)
+
+    if "config" in first_ckpt:
+        conf = first_ckpt["config"]
+        model_cfg = conf["model"]
+        sample_cfg = conf["sample"]
+    else:
+        model_cfg = {"image_size": 32, "bottleneck_dim": 4, "in_channels": 1,
+                     "out_dim": 1, "num_classes": 10, "model_channels": 64,
+                     "max_channels": 512, "time_emb_dim": 256
+                    }
+        sample_cfg = {"T": 1000, "ddim_steps": 50}
+
+    model = DiffusionModel(
+                image_size=model_cfg["image_size"],
+                bottleneck_dim=model_cfg["bottleneck_dim"],
+                in_channels=model_cfg["in_channels"],
+                out_dim=model_cfg["out_dim"],
+                num_classes=model_cfg["num_classes"],
+                model_channels=model_cfg["model_channels"],
+                max_channels=model_cfg["max_channels"],
+                time_emb_dim=model_cfg["time_emb_dim"],
+                ).to(device)
+    
+    T = sample_cfg["T"]
+    betas = get_cosine_schedule(T).to(device)
+    alphas = 1.0 - betas
+    alphas_cumprod = torch.cumprod(alphas.cpu(), axis=0).to(device)
 
     results = []
     for ckpt_path in checkpoints:

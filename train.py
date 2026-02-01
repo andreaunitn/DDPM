@@ -8,6 +8,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 import argparse
 import os
+import yaml
 
 from diffusion_core.model import DiffusionModel
 from diffusion_core.schedule import get_cosine_schedule
@@ -83,31 +84,42 @@ def sample_validation_images(model, alphas_cumprod, device, writer, global_step)
 
 def main(args):
 
-    # Config
-    batch_size = args.batch_size
-    grad_accumulation_steps = args.grad_acc_steps
-    epochs = args.epochs
-    lr = args.lr
-    T = args.timesteps
+    # Load config
+    with open(args.config, "r") as f:
+        config = yaml.safe_load(f)
+
+    run_name = config["experiment_name"]
+    model_cfg = config["model"]
+    train_cfg = config["train"]
+
+    batch_size = train_cfg["batch_size"]
+    grad_accumulation_steps = train_cfg["grad_acc_steps"]
+    epochs = train_cfg["epochs"]
+    lr = train_cfg["lr"]
+    weight_decay = train_cfg["weight_decay"]
+    T = train_cfg["timesteps"]
     betas = get_cosine_schedule(T).to(device)
     alphas = 1.0 - betas
     alphas_cumprod = torch.cumprod(alphas.cpu(), axis=0).to(device)
 
-    writer = SummaryWriter(log_dir="runs/diffusion_mnist")
+    writer = SummaryWriter(log_dir=f"runs/{run_name}")
 
     dataloader = get_data(batch_size)
     model = DiffusionModel(
-                image_size=32,
-                bottleneck_dim=4,
-                in_channels=1,
-                out_dim=1,
-                num_classes=10
+                image_size=model_cfg["image_size"],
+                bottleneck_dim=model_cfg["bottleneck_dim"],
+                in_channels=model_cfg["in_channels"],
+                out_dim=model_cfg["out_dim"],
+                model_channels=model_cfg["model_channels"],
+                max_channels=model_cfg["max_channels"],
+                time_emb_dim=model_cfg["time_emb_dim"],
+                num_classes=model_cfg["num_classes"]
                 ).to(device)
     
     # Init EMA
     ema = EMA(model)
     
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.OneCycleLR(
         optimizer,
         max_lr=lr,
@@ -185,7 +197,7 @@ def main(args):
 
         # Save checkpoint every 5 epochs
         if (epoch + 1) % 5 == 0:
-            save_training_checkpoint(f"checkpoints/diffusion_model_{epoch}.pth", epoch,  global_step, model, optimizer, scaler, ema)
+            save_training_checkpoint(f"{train_cfg['save_dir']}/{run_name}_{epoch}.pth", epoch,  global_step, model, optimizer, scaler, ema, config)
             print(f"Saved checkpoint for epoch {epoch}")
 
             print("Generating validation samples...")
@@ -207,11 +219,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint file to resume from")
-    parser.add_argument("--batch_size", type=int, default=128)
-    parser.add_argument("--grad_acc_steps", type=int, default=4, help="Number of accumulation steps before updating the parameters")
-    parser.add_argument("--epochs", type=int, default=50)
-    parser.add_argument("--lr", type=int, default=2e-4)
-    parser.add_argument("--timesteps", type=int, default=1000)
+    parser.add_argument("--config", type=str, default="config.yaml", help="Path to the config file")
     args = parser.parse_args()
 
     main(args)
