@@ -3,7 +3,7 @@ experiment_name: "dm_mnist_v1"
 model:
   image_size: 32
   in_channels: 1
-  model_channels: 64
+  model_channels: 96
   bottleneck_dim: 4
   max_channels: 512
   out_dim: 1

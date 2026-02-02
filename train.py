@@ -210,7 +210,7 @@ def main(args):
                 global_step
             )
 
-    save_training_checkpoint(f"checkpoints/diffusion_model_final.pth", epochs, global_step, model, optimizer, scaler, ema)
+    save_training_checkpoint(f"checkpoints/diffusion_model_final.pth", epochs, global_step, model, optimizer, scaler, ema, config)
 
     writer.close()
     print(f"--> Finished. Models saved.")
