@@ -53,22 +53,27 @@ def forward_diffusion(x_0, t, alphas_cumprod):
     return x_t, noise
 
 @torch.no_grad()
-def sample_validation_images(model, alphas_cumprod, device, writer, global_step):
+def sample_validation_images(model, alphas_cumprod, device, writer, global_step, config):
+    model_cfg = config["model"]
+    sample_cfg = config["sample"]
+
     model.eval()
 
-    num_classes = 10
+    num_classes = model_cfg["num_classes"]
     y = torch.arange(num_classes).long().to(device)
 
     sampler = ddim_sample(
         model=model,
         n_samples=num_classes,
-        image_size=32,
-        in_channels=1,
+        image_size=model_cfg["image_size"],
+        in_channels=model_cfg["in_channels"],
         alphas_cumprod=alphas_cumprod,
         y=y,
         device=device,
-        timesteps=1000,
-        ddim_steps=50
+        timesteps=sample_cfg["T"],
+        ddim_steps=sample_cfg["ddim_steps"],
+        guidance_scale=sample_cfg["guidance_scale"],
+        null_class_idx=sample_cfg["null_class_idx"]
     )
 
     x_gen = None
@@ -79,8 +84,6 @@ def sample_validation_images(model, alphas_cumprod, device, writer, global_step)
 
     grid = make_grid(x_gen, nrow=5)
     writer.add_image("Validation/Generates_Images", grid, global_step)
-
-    model.train()
 
 def main(args):
 
@@ -170,9 +173,15 @@ def main(args):
             t = torch.randint(0, T, (images.shape[0],), device=device).long()
             x_t, noise = forward_diffusion(images, t, alphas_cumprod)
 
+            # CFG
+            drop_prob = 0.1
+            drop_mask = torch.rand(labels.shape, device=device) < drop_prob
+            null_class_idx = model_cfg["num_classes"]
+            labels_dropped = torch.where(drop_mask, torch.tensor(null_class_idx, device=device), labels)
+
             # Autocast for mixed precision
             with torch.amp.autocast(device_type="mps", dtype=torch.bfloat16):
-                noise_pred = model(x_t, t, labels)
+                noise_pred = model(x_t, t, labels_dropped)
                 loss = diffusion_loss(noise_pred, noise)
                 loss = loss / grad_accumulation_steps # Normalizing
 
@@ -202,12 +211,14 @@ def main(args):
 
             print("Generating validation samples...")
             validation_model = ema.ema_model
+            validation_model.eval()
             sample_validation_images(
                 validation_model,
                 alphas_cumprod,
                 device,
                 writer,
-                global_step
+                global_step,
+                config
             )
 
     save_training_checkpoint(f"checkpoints/diffusion_model_final.pth", epochs, global_step, model, optimizer, scaler, ema, config)

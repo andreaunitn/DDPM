@@ -134,7 +134,16 @@ def evaluate(args):
             current_batch_size = min(gen_batch_size, args.n_samples - total_generated)
 
             y = torch.randint(0, 10, (current_batch_size, )).long().to(device)
-            sampler = ddim_sample(model, current_batch_size, 32, 1, alphas_cumprod, y, device, ddim_steps=50)
+            sampler = ddim_sample(
+                model, 
+                current_batch_size, 
+                model_cfg["image_size"], 
+                model_cfg["in_channels"], 
+                alphas_cumprod, y, device, 
+                ddim_steps=sample_cfg["ddim_steps"], 
+                guidance_scale=sample_cfg["guidance_scale"], 
+                null_class_idx=sample_cfg["null_class_idx"]
+                )
 
             fake_batch = None
             for x, _ in sampler:

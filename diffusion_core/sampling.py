@@ -11,7 +11,9 @@ def ddim_sample(model,
                 timesteps=1000,
                 ddim_steps=50,
                 eta=0.0,
-                seed=None
+                seed=None,
+                guidance_scale=3.0,
+                null_class_idx=10
                 ):
     
     # Generator
@@ -35,7 +37,23 @@ def ddim_sample(model,
 
         # Predict noise
         t_tensor = torch.full((n_samples,), t_cur, device=device, dtype=torch.long)
-        noise_pred = model(x, t_tensor, y)
+
+        # CFG
+        if guidance_scale > 1.0 and y is not None:
+            x_double = torch.cat([x, x], dim=0)
+            t_double = torch.cat([t_tensor, t_tensor], dim=0)
+
+            # Create a batch of null labels
+            y_null = torch.full_like(y, null_class_idx)
+            y_double = torch.cat([y, y_null], dim=0)
+
+            # Predict both at once
+            noise_pred_double = model(x_double, t_double, y_double)
+            noise_pred_cond, noise_pred_uncond = noise_pred_double.chunk(2, dim=0)
+            noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_cond - noise_pred_uncond)
+            
+        else:
+            noise_pred = model(x, t_tensor, y)
 
         # Calculate alphas
         alpha_bar_cur = alphas_cumprod[t_cur]

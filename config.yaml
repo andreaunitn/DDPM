@@ -1,4 +1,4 @@
-experiment_name: "dm_mnist_v1"
+experiment_name: "dm_mnist_v4"
 
 model:
   image_size: 32
@@ -22,6 +22,8 @@ train:
 sample:
   T: 1000
   ddim_steps: 50
+  guidance_scale: 1.2
+  null_class_idx: 10
 
 schedule:
   type: "cosine"

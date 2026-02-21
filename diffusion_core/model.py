@@ -62,7 +62,7 @@ class DiffusionModel(nn.Module):
         # Class conditioning setup
         self.num_classes = num_classes
         if self.num_classes is not None:
-            self.label_emb = nn.Embedding(num_classes, time_emb_dim)
+            self.label_emb = nn.Embedding(num_classes + 1, time_emb_dim) # + 1 for CFG
 
         # Calculating required depth
         # e. g. 64 // 4 -> 16 -> log2(16) = 4 steps

@@ -81,7 +81,9 @@ def run_test(args):
                               y=y,
                               device=device,
                               ddim_steps=sample_cfg["ddim_steps"],
-                              seed=args.seed
+                              seed=args.seed,
+                              guidance_scale=sample_cfg["guidance_scale"],
+                              null_class_idx=sample_cfg["null_class_idx"]
                               )
     else:
         sampler = ddpm_sample(model,

@@ -78,7 +78,7 @@ def process_image(img_tensor):
     return pil_img
 
 @torch.no_grad()
-def generate_digit(digit, use_ddim, seed):
+def generate_digit(digit, cfg_value, use_ddim, seed):
     """
     Input: int (0-9)
     Output: PIL Image (256 x 256)
@@ -99,7 +99,9 @@ def generate_digit(digit, use_ddim, seed):
                               y=y,
                               device=device,
                               ddim_steps=sample_cfg["ddim_steps"],
-                              seed=seed
+                              seed=seed,
+                              guidance_scale=cfg_value,
+                              null_class_idx=sample_cfg["null_class_idx"]
                               )
         
         update_frequency = 5
@@ -140,6 +142,7 @@ with gr.Blocks(title="Diffusion Process") as demo:
         with gr.Column(scale=1):
             digit_input = gr.Slider(0, 9, step=1, label="Which number?", value=5)
             seed_input = gr.Number(label="Seed (leave blank for random)", value=None, precision=0)
+            cfg_value = gr.Slider(0, 9, step=0.1, label="CFG", value=sample_cfg["guidance_scale"])
             use_ddim_chk = gr.Checkbox(label="Use fast sampling (DDIM)", value=True)
             run_btn = gr.Button("Generate", variant="primary")
 
@@ -147,7 +150,7 @@ with gr.Blocks(title="Diffusion Process") as demo:
             final_output = gr.Image(label="Final Result", type="pil")
             gallery = gr.Gallery(label="Denoising Process", columns=4, height="auto")
 
-    run_btn.click(fn=generate_digit, inputs=[digit_input, use_ddim_chk, seed_input], outputs=[final_output, gallery])
+    run_btn.click(fn=generate_digit, inputs=[digit_input, cfg_value, use_ddim_chk, seed_input], outputs=[final_output, gallery])
 
 if __name__ == "__main__":
     demo.launch()
