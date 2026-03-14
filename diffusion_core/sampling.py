@@ -51,7 +51,7 @@ def ddim_sample(model,
             noise_pred_double = model(x_double, t_double, y_double)
             noise_pred_cond, noise_pred_uncond = noise_pred_double.chunk(2, dim=0)
             noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_cond - noise_pred_uncond)
-            
+
         else:
             noise_pred = model(x, t_tensor, y)
 
@@ -62,6 +62,8 @@ def ddim_sample(model,
         # DDIM update
         pred_x0 = (x - torch.sqrt(1 - alpha_bar_cur) * noise_pred) / torch.sqrt(alpha_bar_cur)
         pred_x0 = torch.clamp(pred_x0, -1, 1)
+
+        noise_pred = (x - torch.sqrt(alpha_bar_cur) * pred_x0) / torch.sqrt(1 - alpha_bar_cur)
 
         sigma_t = eta * torch.sqrt((1 - alpha_bar_prev) / (1 - alpha_bar_cur) * (1 - alpha_bar_cur / alpha_bar_prev))
         dir_xt = torch.sqrt(1 - alpha_bar_prev - sigma_t ** 2) * noise_pred

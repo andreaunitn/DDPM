@@ -106,7 +106,7 @@ class DiffusionModel(nn.Module):
             # We add a Downsample layer at the END of every block except the last one
             # to ensure we reach the exact bottleneck dimension at the end
             is_last = idx == (len(channel_mults) - 1)
-
+ 
             self.downs.append(nn.ModuleList([
                 AdaGNResidualBlock(channels, out_channels, time_emb_dim),
                 AdaGNResidualBlock(out_channels, out_channels, time_emb_dim),
